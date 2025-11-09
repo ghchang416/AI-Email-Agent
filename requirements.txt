@@ -1,0 +1,16 @@
+torch
+sentence-transformers 
+safetensors
+langchain
+langchain-community
+langchain-huggingface
+langchain-text-splitters
+pypdf
+chromadb
+
+fastapi
+uvicorn
+pydantic
+streamlit
+
+crewai
