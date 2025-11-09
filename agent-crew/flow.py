@@ -6,7 +6,7 @@ from crews.filtering.crew import FilteringCrew
 from crews.drafting.crew import DraftingCrew
 from crews.routing.crew import RoutingCrew
 from schemas.request_io import EmailInput, EmailFlowState
-from schemas.task_output import DraftValidation, EmailInput, EmailAnalysis, FinalAssigneeResult
+from schemas.task_output import DraftValidation, EmailAnalysis, FinalAssigneeResult
 from tools import send_task_to_kanban_tool
 from utils import config
 
@@ -16,7 +16,6 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
     """ @router를 사용하여 카테고리별 로직을 명확히 분리한 이메일 플로우 """
     MAX_RETRIES = 1
     MAX_ROUTING_ATTEMPTS = 3
-    kanban_webhook_url = config.N8N_CREATE_KANBAN_TASK_WEBHOOK_URL
     spam_webhook_url = config.N8N_SPAM_PROCESS_WEBHOOK_URL
     reply_webhook_url = config.N8N_SEND_REPLY_WEBHOOK_URL
     default_name = config.DEFAULT_MANAGER_NAME
@@ -30,7 +29,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
 
     @listen(start_flow)
     def run_filtering(self, email_data: EmailInput) -> EmailAnalysis:
-        logger.log("Running filtering crew...")
+        logger.info("Running filtering crew...")
         inputs = {
             "sender": email_data.sender,
             "subject": email_data.subject,
@@ -38,12 +37,12 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
         }
         result: EmailAnalysis = FilteringCrew().crew().kickoff(inputs=inputs).pydantic
         self.state.analysis_result = result
-        logger.log(f"Filtering complete. Category: {result.category}")
+        logger.info(f"Filtering complete. Category: {result.category}")
         return result
     
     @router(run_filtering) 
     def route_email(self, analysis: EmailAnalysis) -> str:
-        logger.log(f"Routing based on category: {analysis.category}")
+        logger.info(f"Routing based on category: {analysis.category}")
         return analysis.category
 
     @listen("OTHER")
@@ -57,7 +56,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
 
     @listen("TASK")
     def handle_task(self) -> Tuple[str, Optional[str]]:
-        logger.log(f"Action: Running Routing and Scheduling...")
+        logger.info(f"Action: Running Routing and Scheduling...")
         email_summary = self.state.analysis_result.summary
         email_data = self.state.email_data
 
@@ -67,7 +66,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
         routing_succeeded = False
 
         for attempt in range(self.MAX_ROUTING_ATTEMPTS):
-            logger.log(f"Routing attempt {attempt + 1}/{self.MAX_ROUTING_ATTEMPTS}...")
+            logger.info(f"Routing attempt {attempt + 1}/{self.MAX_ROUTING_ATTEMPTS}...")
 
             routing_inputs = {
                 "sender": email_data.sender,
@@ -78,14 +77,14 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
             }
 
             try:
-                final_result: FinalAssigneeResult = RoutingCrew().crew().kickoff(inputs=routing_inputs)
+                final_result: FinalAssigneeResult = RoutingCrew().crew().kickoff(inputs=routing_inputs).pydantic
 
                 if not final_result:
                      logger.warning("Routing crew returned an empty result. Retrying...")
                      continue 
                 
                 if final_result.status == 'Success':
-                    logger.log(f"Routing complete. Final Assignee: {final_result.final_assignee_name} ({final_result.final_assignee_email})")
+                    logger.info(f"Routing complete. Final Assignee: {final_result.final_assignee_name} ({final_result.final_assignee_email})")
                     self.state.final_assignee_result = final_result
                     routing_succeeded = True
                     break
@@ -93,7 +92,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
                 else:
                     logger.warning(f"Routing attempt failed. Reason: {final_result.reasoning}")
                     excluded_assignees_list.append(final_result.final_assignee_email)
-                    logger.log(f"Adding to exclusion list: {final_result.final_assignee_email}")
+                    logger.info(f"Adding to exclusion list: {final_result.final_assignee_email}")
             
             except Exception as e:
                 logger.error(f"[ERROR] RoutingCrew kickoff failed (Attempt {attempt + 1}): {e}", exc_info=True)
@@ -108,7 +107,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
             )
 
         assigned_to_email = self.state.final_assignee_result.final_assignee_email
-        logger.log(f"Final assigned email for drafting: {assigned_to_email}")
+        logger.info(f"Final assigned email for drafting: {assigned_to_email}")
                
         final_draft = self._run_drafting_crew()
         return final_draft
@@ -131,7 +130,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
         
         while not validation_passed and attempts < self.MAX_RETRIES:
             attempts += 1
-            logger.log(f"Drafting attempt {attempts}...")
+            logger.info(f"Drafting attempt {attempts}...")
             
             crew_result = DraftingCrew().crew().kickoff(inputs=inputs_for_crew)
             validation: DraftValidation = crew_result.pydantic
@@ -139,10 +138,10 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
             if validation and validation.passed:
                 validation_passed = True
                 final_draft = crew_result.tasks_output[0].raw
-                logger.log("Validation PASSED.")
+                logger.info("Validation PASSED.")
             else:
                 critique = validation.critique if validation else "Pydantic parsing failed."
-                logger.log(f"Validation FAILED. Critique: {critique}")
+                logger.info(f"Validation FAILED. Critique: {critique}")
                 inputs_for_crew['last_critique'] = critique
         
         return final_draft
@@ -158,7 +157,6 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
             assignee_data = self.state.final_assignee_result
 
             success = send_task_to_kanban_tool._run(
-                webhook_url=self.kanban_webhook_url,
                 message_id=email_data.message_id,
                 sender=email_data.sender,
                 subject=email_data.subject,
@@ -184,7 +182,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
             return logger.error(f"Failed to generate valid draft after {self.MAX_RETRIES} attempts.")
         
         email_data = self.state.email_data
-        logger.log("Action: Calling n8n webhook to send reply...")
+        logger.info("Action: Calling n8n webhook to send reply...")
         try:
             payload = {
                 "message_id": email_data.message_id,

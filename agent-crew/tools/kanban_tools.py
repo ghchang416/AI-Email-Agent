@@ -13,15 +13,13 @@ class GetKanbanUserStatusTool(BaseTool):
     name: str = "칸반 보드 사용자 상태 조회 도구"
     description: str = "담당자의 이메일을 받아, 현재 칸반 보드 상의 상태(휴가, 업무량)를 반환합니다."
     args_schema: Type[BaseModel] = KanbanStatusInput
+    get_user_url: str = config.N8N_GET_USER_STATUS_WEBHOOK_URL
     
-    def __init__(self):
-        self.webhook_url = config.N8N_GET_USER_STATUS_WEBHOOK_URL
-        
     def _run(self, assignee_email: str) -> str:
         """ Kanban Board 서버를 호출하여 담당자 상태를 가져옵니다. """
         params = {'email': assignee_email}
         try:
-            response = requests.get(self.webhook_url, params=params, timeout=5)
+            response = requests.get(self.get_user_url, params=params, timeout=5)
             response.raise_for_status() 
         
             status_data = response.json()
@@ -43,9 +41,10 @@ class SendTaskToKanbanTool(BaseTool):
         "칸반보드 서버의 웹훅을 통해 새로운 작업 카드를 만듭니다"
     )
     args_schema: Type[BaseModel] = SendKanbanTaskInput
+    upload_task_url: str = config.N8N_CREATE_KANBAN_TASK_WEBHOOK_URL
     
     def _run(
-        self, 
+        self,
         message_id: str,
         sender: str,
         subject: str,
@@ -59,12 +58,6 @@ class SendTaskToKanbanTool(BaseTool):
         성공 시: "Success: [메시지]"
         실패 시: "Error: [에러 상세]"
         """
-        
-        try:
-            webhook_url = config.N8N_CREATE_KANBAN_TASK_WEBHOOK_URL
-        except AttributeError:
-            logger.critical("[Tool Error] 'N8N_CREATE_KANBAN_TASK_WEBHOOK_URL' not set in config.py.")
-            return "Error: Tool configuration error. The Kanban webhook URL is not set."
 
         payload = {
             "message_id": message_id,
@@ -79,7 +72,7 @@ class SendTaskToKanbanTool(BaseTool):
         logger.info(f"Sending 'TASK' data to Kanban webhook for assignee: {assignee_email}")
 
         try:
-            response = requests.post(webhook_url, json=payload, timeout=10) 
+            response = requests.post(self.upload_task_url, json=payload, timeout=10) 
             response.raise_for_status() 
             
             logger.info(f"Successfully sent task to Kanban for message_id: {message_id}")

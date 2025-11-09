@@ -20,7 +20,7 @@ class FilteringCrew():
     @task
     def triage_email_task(self) -> Task:
         return Task(
-            config=self.tasks_agents['triage_email_task'],
+            config=self.tasks_config['triage_email_task'],
             output_pydantic=EmailAnalysis
         )
         

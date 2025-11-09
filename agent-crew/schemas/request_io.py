@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional
-from task_output import EmailAnalysis, FinalAssigneeResult
+from schemas.task_output import EmailAnalysis, FinalAssigneeResult
 
 class EmailInput(BaseModel):
     message_id: str = Field(description="Gmail의 고유 메시지 ID")

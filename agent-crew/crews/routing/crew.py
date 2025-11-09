@@ -41,7 +41,7 @@ class RoutingCrew:
     def validate_assignee_task(self) -> Task:
         return Task(
             config=self.tasks_config['validate_assignee_task'],
-            context_tasks=[self.find_primary_assignee_task()],
+            context_tasks=[self.routing_task()],
             output_pydantic=FinalAssigneeResult 
         )
         

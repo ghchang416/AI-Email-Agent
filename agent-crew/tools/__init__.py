@@ -1,5 +1,5 @@
-from rag_tools import SearchOrgChartTool, SearchInternalDocsTool
-from kanban_tools import GetKanbanUserStatusTool, SendTaskToKanbanTool
+from tools.rag_tools import SearchOrgChartTool, SearchInternalDocsTool
+from tools.kanban_tools import GetKanbanUserStatusTool, SendTaskToKanbanTool
 
 search_org_chart_tool = SearchOrgChartTool()
 search_internal_docs_tool = SearchInternalDocsTool() 
