@@ -28,3 +28,40 @@ routing_task:
     분석 결과를 `RoutingResult` Pydantic 모델의 JSON 형식으로 반환합니다.
     반드시 'recipient_name', 'recipient_email' 키를 포함해야 합니다.
   agent: email_routing_agent
+
+  
+validate_assignee_task:
+  description: >
+    당신은 1차 배정된 담당자의 '업무 적절성'과 '스케줄 가용성'을
+    **순차적으로 모두 검증**하여, 배정의 '최종 성공/실패'를 결정하는 임무를 받았습니다.
+
+    **[입력 정보 (이전 태스크에서 제공)]**
+    - 1차 배정 담당자명: {recipient_name}
+    - 1차 배정 담당자 이메일: {recipient_email}
+    
+    **[입력 정보 (메인 입력값)]**
+    - 문의 원본 요약: {email_summary}
+
+    **[업무 처리 규칙 (순차적)]**
+
+    **1. 업무 적절성 검증 (필수)**
+        - `SearchOrgChartTool`을 호출하여 [전체 업무 분장표]를 가져옵니다.
+        - [전체 업무 분장표]에서 `{recipient_email}`에 해당하는 담당자의 [담당 업무] 설명을 정확히 추출합니다.
+        - 추출한 [담당 업무] 설명과 [문의 원본 요약]({email_summary})을 비교합니다.
+        - **(실패 시)**: 두 내용이 명백히 일치하지 않으면 (예: '졸업' 문의인데 '서버 관리' 담당자인 경우),
+          즉시 `status: "Failed"`, `reasoning: "업무 불일치: {담당자의 실제 업무 요약}"`을 반환합니다. (이하 2단계 생략)
+
+    **2. 스케줄 가용성 검증 (1단계 통과 시)**
+        - (업무가 적절하다고 판단된 경우에만) `GetKanbanUserStatusTool`을 `{recipient_email}` 인수로 호출합니다.
+        - 도구에서 반환된 **담당자의 실제 스케줄 상태** (예: 'Available', 'Vacation', 'Overloaded')를 확인합니다.
+        - (A) 만약 실제 스케줄이 **'Available'**이라면:
+            - `status: "Success"`
+            - `reasoning: "업무 일치 및 스케줄 가용함."`
+        - (B) 만약 실제 스케줄이 'Available'이 **아니라면** (예: 'Vacation'):
+            - `status: "Failed"`
+            - `reasoning: "업무는 적절하나, 스케줄 검증 실패: {담당자의 실제 스케줄 상태}"` (예: "스케줄 검증 실패: 휴가 중")
+
+  expected_output: >
+    최종 검증 결과를 `FinalAssigneeResult` Pydantic 모델의 JSON 형식으로 반환합니다.
+    (final_assignee_name, final_assignee_email, status, reasoning)
+  agent: assignee_validation_agent

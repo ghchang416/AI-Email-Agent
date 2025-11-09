@@ -10,6 +10,14 @@ class RoutingResult(BaseModel):
     """라우팅 크루의 최종 출력을 위한 Pydantic 모델"""
     recipient_name: str = Field(..., description="찾아낸 담당자 이름")
     recipient_email: str = Field(..., description="찾아낸 담당자 이메일")
+    
+class FinalAssigneeResult(BaseModel):
+    """2. 최종 담당자 확정 결과 (종합 검증)"""
+    final_assignee_name: str = Field(description="최종 검증 대상 담당자 이름")
+    final_assignee_email: str = Field(description="최종 검증 대상 담당자 이메일")
+    
+    status: Literal['Success', 'Failed'] = Field(description="최종 담당자 확정 상태 ('Success' 또는 'Failed')")
+    reasoning: str = Field(description="확정 또는 실패 사유 (예: '업무 일치 및 스케줄 가용' 또는 '업무 불일치' 또는 '스케줄 검증 실패: 휴가 중')")
 
 class DraftValidation(BaseModel):
     """LLM-as-a-Judge의 검증 결과를 담는 스키마"""

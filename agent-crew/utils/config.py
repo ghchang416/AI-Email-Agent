@@ -9,3 +9,6 @@ ORG_CHART_JSON_PATH = os.path.join(DATA_DIR, "업무분장표/소프트웨어융
 CHROMA_DB_PATH = DB_DIR
 EMBEDDING_MODEL = "jhgan/ko-sroberta-multitask"
 VECTOR_DB_K = 3
+
+
+N8N_GET_USER_STATUS_WEBHOOK_URL = "http://localhost:5678/webhook/get-user-status"
