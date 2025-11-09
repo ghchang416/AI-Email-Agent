@@ -2,8 +2,8 @@ from typing import List
 from crewai import Agent, Task, Crew, Process
 from crewai.project import CrewBase, agent, task, crew
 from crewai.agents.agent_builder.base_agent import BaseAgent
-from schemas.schemas import RoutingResult
-from tools.tools import search_org_chart_tool
+from schemas.task_output import RoutingResult
+from tools import search_org_chart_tool
 
 @CrewBase
 class RoutingCrew:
