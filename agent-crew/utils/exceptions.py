@@ -1,0 +1,2 @@
+class OrgChartToolError(Exception):
+    pass

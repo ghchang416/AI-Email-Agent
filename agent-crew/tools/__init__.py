@@ -1,0 +1,3 @@
+from tools import SearchOrgChartTool
+
+search_org_chart_tool = SearchOrgChartTool
