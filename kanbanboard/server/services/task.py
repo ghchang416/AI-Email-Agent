@@ -1,4 +1,5 @@
 import logging
+import requests
 from sqlalchemy.orm import Session
 from fastapi import Depends, HTTPException
 from repositories.task import TaskRepository
@@ -11,6 +12,7 @@ logger = logging.getLogger(__name__)
 
 class TaskService:
     """ Task 관련 비즈니스 로직을 담당합니다. (예: 이메일로 담당자 ID 찾기) """
+    N8N_COMPLETION_WEBHOOK_URL = "http://localhost:5678/webhook-test/7c48c472-33c8-409b-bbcf-7fff85c548f1"
     
     def __init__(self, db: Session = Depends(get_db)):
         self.user_repo = UserRepository(db)
@@ -55,3 +57,21 @@ class TaskService:
             logger.warning(f"Failed to update task. Task not found for ID: {task_id}")
             raise HTTPException(status_code=404, detail="Task not found")
         return db_task
+    
+    def send_n8n_webhook_sync(self, message_id: str, content: str):
+        """
+        백그라운드에서 n8n 웹훅을 동기적으로 호출합니다.
+        (BackgroundTasks는 비동기(async) 함수를 직접 지원하지 않으므로 동기 함수로 만듭니다.)
+        """
+        if not message_id:
+            print("n8n Webhook: message_id가 없어 알림을 생략합니다.")
+            return
+
+        try:
+            payload = {"message_id": message_id, "content": content}
+            response = requests.post(self.N8N_COMPLETION_WEBHOOK_URL, json=payload, timeout=10)
+            response.raise_for_status()
+            print(f"n8n Webhook: {message_id} 알림 성공")
+        except requests.exceptions.RequestException as e:
+            print(f"[CRITICAL] n8n Webhook: {message_id} 알림 실패: {e}")
+            pass
