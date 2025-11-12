@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 class TaskService:
     """ Task 관련 비즈니스 로직을 담당합니다. (예: 이메일로 담당자 ID 찾기) """
-    N8N_COMPLETION_WEBHOOK_URL = "http://localhost:5678/webhook-test/7c48c472-33c8-409b-bbcf-7fff85c548f1"
+    N8N_COMPLETION_WEBHOOK_URL = "http://localhost:5678/webhook/7c48c472-33c8-409b-bbcf-7fff85c548f1"
     
     def __init__(self, db: Session = Depends(get_db)):
         self.user_repo = UserRepository(db)
