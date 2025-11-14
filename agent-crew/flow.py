@@ -150,7 +150,7 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
     def handle_task_post_action(self, final_draft: Optional[str]):
         
         if not final_draft:
-            return logger.error("handle_task_post_action: Draft is None, running failure handler.")
+            logger.warning("handle_task_post_action: Draft is None, running failure handler.")
         
         try:
             email_data = self.state.email_data
@@ -176,19 +176,43 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
         
     @listen(handle_inquiry)
     def handle_inquiry_post_action(self, final_draft: Optional[str]):
-        """Directory_Inquiry 초안 생성 후속 조치 (웹훅 전송)"""
+        """Simple_Inquiry 후속 조치: 성공 시 답장, 실패 시 칸반보드 전송"""
 
-        if not final_draft:
-            return logger.error(f"Failed to generate valid draft after {self.MAX_RETRIES} attempts.")
+        if final_draft:
+            email_data = self.state.email_data
+            logger.info("Action: Calling n8n webhook to send reply...")
+            try:
+                payload = {
+                    "message_id": email_data.message_id,
+                    "content": final_draft
+                }
+                requests.post(self.reply_webhook_url, json=payload)
+                return "Inquiry_Answered"
+            except Exception as e:
+                logger.error(f"Failed to call n8n send webhook: {e}")
+                return "Inquiry_Webhook_Failed"
         
-        email_data = self.state.email_data
-        logger.info("Action: Calling n8n webhook to send reply...")
-        try:
-            payload = {
-                "message_id": email_data.message_id,
-                "content": final_draft
-            }
-            requests.post(self.reply_webhook_url, json=payload)
-        except Exception as e:
-            logger.error(f"Failed to call n8n send webhook: {e}")
-        return "Inquiry_Answered"
+        else:
+            # --- 실패 경로 ---
+            logger.warning(f"Failed to generate draft for Simple_Inquiry. Assigning to default manager for manual handling.")
+            
+            try:
+                email_data = self.state.email_data
+
+                success = send_task_to_kanban_tool._run(
+                    message_id=email_data.message_id,
+                    sender=email_data.sender,
+                    subject=email_data.subject,
+                    body=email_data.body,
+                    final_draft=None, # 초안 없음
+                    assignee_name=self.default_name,
+                    assignee_email=self.default_email
+                )
+                
+                if success:
+                    return "Task_Created_In_Kanban_As_Fallback"
+                else:
+                    return "Task_Webhook_Failed"
+                    
+            except Exception as e:
+                return logger.error(f"Failed to process handle_inquiry_post_action (failure path): {e}", exc_info=True)

@@ -1,3 +1,4 @@
+# RAG
 torch
 sentence-transformers 
 safetensors
@@ -8,9 +9,17 @@ langchain-text-splitters
 pypdf
 chromadb
 
+# server
 fastapi
 uvicorn
 pydantic
+pydantic[email]
+psycopg2-binary
 streamlit
 
+# DB
+sqlalchemy
+boto3
+
+# Agent
 crewai
