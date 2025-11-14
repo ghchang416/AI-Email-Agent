@@ -62,7 +62,7 @@ class TaskService:
             raise HTTPException(status_code=404, detail="Task not found")
         return db_task
     
-    def send_n8n_webhook_sync(self, message_id: str, content: str):
+    def send_n8n_webhook_sync(self, message_id: str, content: str, assignee_name: str, user_email: str):
         """
         백그라운드에서 n8n 웹훅을 동기적으로 호출합니다.
         (BackgroundTasks는 비동기(async) 함수를 직접 지원하지 않으므로 동기 함수로 만듭니다.)
@@ -70,9 +70,16 @@ class TaskService:
         if not message_id:
             print("n8n Webhook: message_id가 없어 알림을 생략합니다.")
             return
+        
+        final_content = content
+
+        if assignee_name and user_email:
+            # 메일 본문(content) 밑에 담당자 서명 추가
+            signature = f"\n\n---\n담당자: {assignee_name} {user_email}"
+            final_content = content + signature
 
         try:
-            payload = {"message_id": message_id, "content": content}
+            payload = {"message_id": message_id, "content": final_content}
             response = requests.post(self.N8N_COMPLETION_WEBHOOK_URL, json=payload, timeout=10)
             response.raise_for_status()
             print(f"n8n Webhook: {message_id} 알림 성공")

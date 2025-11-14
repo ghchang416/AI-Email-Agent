@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, BackgroundTasks
 from typing import List, Optional
 from schemas.task import TaskSchema, KanbanTaskCreateSchema, TaskUpdate
+from schemas.user import UserSchema
 from services.task import TaskService
+from services.user import UserService
 
 router = APIRouter(prefix="/tasks", tags=["Tasks"])
 
@@ -33,13 +35,18 @@ async def update_existing_task(
     task_id: int, 
     task_update: TaskUpdate, 
     background_tasks: BackgroundTasks,
-    service: TaskService = Depends(),
+    task_service: TaskService = Depends(),
+    user_service: UserService = Depends(),
 ):
     """ Task의 상태, 담당자, 내용 등을 수정합니다. """
     if task_update.status == "완료":
+        user: UserSchema = user_service.get_user_by_id(task_update.assignee_id)
+        
         background_tasks.add_task(
-            service.send_n8n_webhook_sync,
+            task_service.send_n8n_webhook_sync,
             task_update.message_id, 
-            task_update.draft_content
+            task_update.draft_content,
+            user.name,
+            user.email
         )
-    return service.update_task_status(task_id, task_update)
+    return task_service.update_task_status(task_id, task_update)
