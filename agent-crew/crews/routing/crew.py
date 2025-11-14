@@ -2,7 +2,7 @@ from typing import List
 from crewai import Agent, Task, Crew, Process
 from crewai.project import CrewBase, agent, task, crew
 from crewai.agents.agent_builder.base_agent import BaseAgent
-from schemas.task_output import RoutingResult, FinalAssigneeResult
+from schemas.task_output import RoutingResult, FinalAssigneeResult, DutyValidationResult
 from tools import search_org_chart_tool, get_kanban_user_status_tool
 
 @CrewBase
@@ -38,10 +38,20 @@ class RoutingCrew:
         )
 
     @task
-    def validate_assignee_task(self) -> Task:
+    def validate_duty_task(self) -> Task:
+        """[STEP 1] 업무 적절성 검증 태스크"""
         return Task(
-            config=self.tasks_config['validate_assignee_task'],
-            context_tasks=[self.routing_task()],
+            config=self.tasks_config['validate_duty_task'],
+            context=[self.routing_task()],
+            output_pydantic=DutyValidationResult 
+        )
+
+    @task
+    def validate_schedule_task(self) -> Task:
+        """[STEP 2] 스케줄 가용성 검증 태스크"""
+        return Task(
+            config=self.tasks_config['validate_schedule_task'],
+            context=[self.routing_task(), self.validate_duty_task()],
             output_pydantic=FinalAssigneeResult 
         )
         

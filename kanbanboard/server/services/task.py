@@ -15,7 +15,7 @@ class TaskService:
     """ Task 관련 비즈니스 로직을 담당합니다. (예: 이메일로 담당자 ID 찾기) """
     N8N_COMPLETION_WEBHOOK_URL = os.getenv(
         "N8N_COMPLETION_WEBHOOK_URL", 
-        "http://n8n:5678/webhook-test/fe6bff88-b878-4abf-aa5e-3cae3a117f8d"
+        "http://n8n:5678/webhook/fe6bff88-b878-4abf-aa5e-3cae3a117f8d"
     )
     
     def __init__(self, db: Session = Depends(get_db)):

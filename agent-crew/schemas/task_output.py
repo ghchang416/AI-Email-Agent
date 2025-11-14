@@ -11,6 +11,11 @@ class RoutingResult(BaseModel):
     recipient_name: str = Field(..., description="찾아낸 담당자 이름")
     recipient_email: str = Field(..., description="찾아낸 담당자 이메일")
     
+class DutyValidationResult(BaseModel):
+    """validate_duty_task의 출력 스키마"""
+    status: Literal["Success", "Failed"] = Field(description="업무 적절성 검증 상태")
+    reasoning: str = Field(description="검증 성공 또는 실패 사유 (예: '업무 불일치: ...')")    
+
 class FinalAssigneeResult(BaseModel):
     """2. 최종 담당자 확정 결과 (종합 검증)"""
     final_assignee_name: str = Field(description="최종 검증 대상 담당자 이름")

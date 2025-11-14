@@ -3,7 +3,7 @@ from crewai import Agent, Task, Crew, Process
 from crewai.project import CrewBase, agent, task, crew
 from crewai.agents.agent_builder.base_agent import BaseAgent
 from schemas.task_output import DraftValidation
-from tools import search_internal_docs_tool, search_org_chart_tool
+from tools import search_internal_docs_tool, search_org_chart_tool, list_knowledge_base_file_tool
 
 @CrewBase
 class DraftingCrew:
@@ -15,7 +15,7 @@ class DraftingCrew:
     def response_generation_agent(self) -> Agent:
         return Agent(
             config=self.agents_config['response_generation_agent'],
-            tools=[search_internal_docs_tool, search_org_chart_tool],
+            tools=[search_internal_docs_tool, list_knowledge_base_file_tool, search_org_chart_tool],
             verbose=True,
         )
 
@@ -23,7 +23,7 @@ class DraftingCrew:
     def draft_validation_agent(self) -> Agent:
         return Agent(
             config=self.agents_config['draft_validation_agent'],
-            tools=[search_internal_docs_tool, search_org_chart_tool],
+            tools=[search_internal_docs_tool, list_knowledge_base_file_tool, search_org_chart_tool],
             verbose=True,
         )
 

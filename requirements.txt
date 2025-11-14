@@ -8,6 +8,9 @@ langchain-huggingface
 langchain-text-splitters
 pypdf
 chromadb
+unstructured[pdf]
+lxml 
+langchain_chroma
 
 # server
 fastapi

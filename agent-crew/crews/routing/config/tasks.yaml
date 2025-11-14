@@ -29,45 +29,43 @@ routing_task:
     반드시 'recipient_name', 'recipient_email' 키를 포함해야 합니다.
   agent: email_routing_agent
 
-validate_assignee_task:
+validate_duty_task:
   description: >
-    당신은 1차 배정된 담당자의 '업무 적절성'과 '스케줄 가용성'을
-    **2단계에 걸쳐 순차적으로, 그리고 반드시 검증**해야 합니다.
-    절대로 단계를 건너뛰거나 도구 호출 없이 추측해서는 안 됩니다.
+    **[STEP 1: 업무 적절성 검증]**
+    'routing_task'에서 1차 배정된 담당자의 '업무 적절성'을 검증합니다.
 
     **[입력 정보 (컨텍스트에서 확인)]**
-    - 1차 담당자명 ('recipient_name')
     - 1차 담당자 이메일 ('recipient_email')
-    (이전 태스크의 JSON 출력에서 이 두 값을 정확히 추출하십시오.)
-    
-    **[입력 정보 (메인 입력값)]**
     - 문의 원본 요약: {email_summary}
-
-    **--- [검증 프로세스 시작] ---**
-
-    **[STEP 1: 업무 적절성 검증 (필수 첫 단계)]**
+    
+    **[작업 지침]**
     1.  `조직도 및 업무 분장표 로드 도구`을 **반드시 호출**하여 [전체 업무 분장표]를 가져옵니다.
-    2.  [전체 업무 분장표]에서 (컨텍스트에서 찾은) 'recipient_email'의 [담당 업무] 설명을 정확히 추출합니다.
-    3.  추출한 [담당 업무]와 [문의 원본 요약]({email_summary})을 비교합니다.
-    4.  **(판단 1)**: 만약 두 내용이 명백히 **불일치**하면 (예: '졸업' 문의 vs '서버 관리' 담당),
-        즉시 태스크를 **실패**로 종료합니다.
-        (출력: `status: "Failed"`, `reasoning: "업무 불일치: {담당자의 실제 업무 요약}"`)
-
-    **[STEP 2: 스케줄 가용성 검증 (STEP 1 통과 시 필수)]**
-    1.  (STEP 1에서 업무가 적절하다고 판단된 경우에만) `칸반 보드 사용자 상태 조회 도구`을 'recipient_email' 인수로 **반드시 호출**합니다.
-    2.  도구에서 반환된 **담당자의 실제 스케줄 상태** (예: 'Available', 'Vacation')를 확인합니다.
-    3.  **(판단 2A)**: 만약 실제 스케줄이 **'Available'**이라면:
-        - 최종 **성공**을 반환합니다.
-        - (출력: `status: "Success"`, `reasoning: "업무 일치 및 스케줄 가용함."`)
-    4.  **(판단 2B)**: 만약 실제 스케줄이 'Available'이 **아니라면** (예: 'Vacation'):
-        - 최종 **실패**를 반환합니다.
-        - (출력: `status: "Failed"`, `reasoning: "업무는 적절하나, 스케줄 검증 실패: {담당자의 실제 스케줄 상태}"`)
-
-    **[매우 중요한 규칙]**
-    - STEP 1과 STEP 2의 도구 호출을 **절대 생략하지 마십시오.**
-    - STEP 1을 통과했다면, **반드시 STEP 2를 수행**해야만 'Success'를 결정할 수 있습니다. 
-    - STEP 1만 통과하고 STEP 2를 확인하지 않은 채 'Success'를 반환하는 것은 **엄격히 금지**됩니다.
+    2.  [전체 업무 분장표]에서 'recipient_email'의 [담당 업무] 설명을 정확히 추출합니다.
+    3.  추출한 [담당 업무]와 {email_summary}를 비교하여, 업무가 일치하는지 판단합니다.
   expected_output: >
-    최종 검증 결과를 `FinalAssigneeResult` Pydantic 모델의 JSON 형식으로 반환합니다.
-    반드시 'final_assignee_name', 'final_assignee_email', 'status', 'reasoning' 키를 포함해야 합니다.
+    검증 결과를 `DutyValidationResult` Pydantic 모델의 JSON 형식으로 반환합니다.
+    - 업무 일치 시: `status: "Success"`, `reasoning: "업무 일치."`
+    - 업무 불일치 시: `status: "Failed"`, `reasoning: "업무 불일치: {담당자의 실제 업무 요약}"`
+  agent: assignee_validation_agent
+
+validate_schedule_task:
+  description: >
+    **[STEP 2: 스케줄 가용성 검증]**
+    'validate_duty_task'를 통과한 담당자의 '스케줄 가용성'을 검증합니다.
+
+    **[입력 정보 (컨텍스트에서 확인)]**
+    - 1차 담당자 이메일 ('recipient_email')
+    - [STEP 1]의 결과 ('DutyValidationResult' JSON)
+    
+    **[작업 지침]**
+    1.  먼저, 'validate_duty_task'의 `status`가 "Success"인지 확인합니다.
+    2.  **(판단 1)** "Success"가 아니면, 즉시 STEP 1의 실패 사유를 그대로 포함하여 'Failed'를 반환합니다.
+    3.  **(판단 2)** "Success"인 경우에만, `칸반 보드 사용자 상태 조회 도구`을 'recipient_email' 인수로 **반드시 호출**합니다.
+    4.  반환된 '담당자의 실제 스케줄 상태'를 확인합니다.
+    5.  'Available'이 아니면 'Failed'를, 'Available'이면 'Success'를 반환합니다.
+  expected_output: >
+    **최종 검증 결과**를 `FinalAssigneeResult` Pydantic 모델의 JSON 형식으로 반환합니다.
+    - 최종 성공 시: `status: "Success"`, `reasoning: "업무 일치 및 스케줄 가용함."`
+    - 스케줄 실패 시: `status: "Failed"`, `reasoning: "업무는 적절하나, 스케줄 검증 실패: {담당자의 실제 스케줄 상태}"`
+    - (STEP 1에서 이미 실패한 경우): STEP 1의 'reasoning'을 그대로 사용.
   agent: assignee_validation_agent
