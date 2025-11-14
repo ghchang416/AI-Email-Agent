@@ -1,5 +1,6 @@
 import requests
 import logging
+import os
 from typing import Tuple, Optional
 from crewai.flow.flow import Flow, start, listen, router
 from crews.filtering.crew import FilteringCrew
@@ -8,7 +9,6 @@ from crews.routing.crew import RoutingCrew
 from schemas.request_io import EmailInput, EmailFlowState
 from schemas.task_output import DraftValidation, EmailAnalysis, FinalAssigneeResult
 from tools import send_task_to_kanban_tool
-from utils import config
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,10 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
     """ @router를 사용하여 카테고리별 로직을 명확히 분리한 이메일 플로우 """
     MAX_RETRIES = 1
     MAX_ROUTING_ATTEMPTS = 3
-    spam_webhook_url = config.N8N_SPAM_PROCESS_WEBHOOK_URL
-    reply_webhook_url = config.N8N_SEND_REPLY_WEBHOOK_URL
-    default_name = config.DEFAULT_MANAGER_NAME
-    default_email = config.DEFAULT_MANAGER_EMAIL
+    spam_webhook_url = os.getenv("N8N_SPAM_PROCESS_WEBHOOK_URL", "http://n8n:5678/webhook/3228da63-16c5-44d8-9852-dab75bdb24c0")
+    reply_webhook_url = os.getenv("N8N_SEND_REPLY_WEBHOOK_URL", "http://n8n:5678/webhook/fe6bff88-b878-4abf-aa5e-3cae3a117f8d")
+    default_name = os.getenv("DEFAULT_MANAGER_NAME", "총괄 담당자")
+    default_email = os.getenv("DEFAULT_MANAGER_EMAIL", "mamager@ajou.ac.kr")
     
     @start()
     def start_flow(self):

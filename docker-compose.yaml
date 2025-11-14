@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    env_file: .env
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000" 
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY}
+    command: server /data --console-address ":9001"
+    env_file: .env
+
+  kanban_db:
+    image: postgres:15
+    environment:
+      - POSTGRES_DB=${KANBAN_DB_NAME}
+      - POSTGRES_USER=${KANBAN_DB_USER}
+      - POSTGRES_PASSWORD=${KANBAN_DB_PASSWORD}
+    volumes:
+      - kanban_db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    env_file: .env
+
+  chromadb:
+    image: chromadb/chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+
+  # data_pipeline:
+  #   build:
+  #     context: .
+  #     dockerfile: ./data-pipeline/Dockerfile
+  #   depends_on:
+  #     - chromadb
+  #     - minio
+  #   env_file: .env
+
+  agent_crew_server:
+    build:
+      context: .
+      dockerfile: ./agent-crew/Dockerfile
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./agent-crew:/app 
+    depends_on:
+      - chromadb
+    env_file: .env
+
+  kanban_server:
+    build:
+      context: .
+      dockerfile: ./kanbanboard/server/Dockerfile 
+    ports:
+      - "8002:8000"
+    volumes:
+      - ./kanbanboard/server:/app 
+    depends_on:
+      - kanban_db
+    env_file: .env
+  
+  kanban_web:
+    build:
+      context: .
+      dockerfile: ./kanbanboard/web/Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./kanbanboard/web:/app
+    depends_on:
+      - kanban_server 
+    env_file: .env
+
+volumes:
+  n8n_data:
+  minio_data:
+  kanban_db_data:
+  chroma_data:

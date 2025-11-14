@@ -1,11 +1,11 @@
 import json
 import requests
 import logging
+import os
 from typing import Optional, Type
 from crewai.tools import BaseTool
 from pydantic import BaseModel
 from schemas.tool_input import KanbanStatusInput, SendKanbanTaskInput
-from utils import config
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class GetKanbanUserStatusTool(BaseTool):
     name: str = "칸반 보드 사용자 상태 조회 도구"
     description: str = "담당자의 이메일을 받아, 현재 칸반 보드 상의 상태(휴가, 업무량)를 반환합니다."
     args_schema: Type[BaseModel] = KanbanStatusInput
-    get_user_url: str = config.N8N_GET_USER_STATUS_WEBHOOK_URL
+    get_user_url: str = os.getenv("GET_USER_STATUS_WEBHOOK_URL", "http://kanban_server:8000/users/status-by-email")
     
     def _run(self, assignee_email: str) -> str:
         """ Kanban Board 서버를 호출하여 담당자 상태를 가져옵니다. """
@@ -41,7 +41,7 @@ class SendTaskToKanbanTool(BaseTool):
         "칸반보드 서버의 웹훅을 통해 새로운 작업 카드를 만듭니다"
     )
     args_schema: Type[BaseModel] = SendKanbanTaskInput
-    upload_task_url: str = config.N8N_CREATE_KANBAN_TASK_WEBHOOK_URL
+    upload_task_url: str = os.getenv("CREATE_KANBAN_TASK_WEBHOOK_URL", "http://kanban_server:8000/tasks")
     
     def _run(
         self,

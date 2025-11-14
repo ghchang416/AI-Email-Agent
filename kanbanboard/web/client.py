@@ -1,8 +1,9 @@
 import streamlit as st
 import requests
+import os
 from typing import List, Dict, Any, Optional
 
-API_URL = "http://127.0.0.1:8888"
+API_URL = os.getenv("KANBAN_SERVER_URL", "http://kanban_server:8000")
 
 @st.cache_data(ttl=10)
 def get_users() -> Optional[List[Dict[str, Any]]]:
