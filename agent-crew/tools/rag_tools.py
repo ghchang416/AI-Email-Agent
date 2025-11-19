@@ -199,7 +199,6 @@ class SearchInternalDocsTool(BaseTool):
 
         self._chroma_host = os.getenv("CHROMA_HOST", "chromadb")
         self._chroma_port = int(os.getenv("CHROMA_PORT", 8000))
-        # [오타 수정] CHROMA__COLLECTION_NAME -> CHROMA_COLLECTION_NAME
         self._collection_name = os.getenv("CHROMA_COLLECTION_NAME", "academic_regulations")
         self._embedding_model = os.getenv("EMBEDDING_MODEL", "jhgan/ko-sroberta-multitask")
         self._search_k = int(os.getenv("VECTOR_DB_K", 3)) # K=3으로 기본 설정
@@ -225,14 +224,12 @@ class SearchInternalDocsTool(BaseTool):
                 port=self._chroma_port
             )
             
-            # [수정] LangChain 0.2.9+ 호환 (langchain-chroma 사용)
             self._vectorstore = Chroma(
                 client=client,
                 collection_name=self._collection_name,
                 embedding_function=embeddings
             )
             
-            # [수정] Retriever를 미리 만들지 않음 (필터가 동적이기 때문)
             logger.info(f"[RAG Tool] Vector DB connection successful (k={self._search_k}).")
             
         except Exception as e:
@@ -249,7 +246,6 @@ class SearchInternalDocsTool(BaseTool):
         logger.info(f"[RAG Tool] Executing search for query: '{query}' with filter: '{source_file}'")
         
         try:
-            # 1. 필터링된 유사도 검색 실행
             docs_with_scores = self._vectorstore.similarity_search_with_relevance_scores(
                 query, 
                 k=self._search_k,
@@ -260,7 +256,6 @@ class SearchInternalDocsTool(BaseTool):
                 logger.warning(f"▶️ [RAG Tool] No documents found for query: '{query}' in file: '{source_file}'")
                 return f"Info: '{source_file}' 파일 내에서 '{query}'와 관련된 문서를 찾지 못했습니다."
 
-            # 2. 문맥 확장 (Context Expansion) - test_rag.py 로직 적용
             best_doc, best_score = docs_with_scores[0]
             best_meta = best_doc.metadata
             best_chunk_id_int = best_meta.get('chunk_id')
@@ -268,13 +263,9 @@ class SearchInternalDocsTool(BaseTool):
             full_context = ""
             
             if best_chunk_id_int is not None:
-                # 2.1. 이 청크의 앞/뒤 ID를 계산
                 prev_chunk_id_int = best_chunk_id_int - 1
                 next_chunk_id_int = best_chunk_id_int + 1
-                
-                # 2.2. 'get' 메소드를 사용해 ID로 앞/뒤 청크를 직접 조회
-                
-                # --- 앞 청크 조회 ---
+            
                 prev_chunk_data = self._vectorstore.get(
                     where={"$and": [
                         {"source": source_file},
@@ -286,10 +277,8 @@ class SearchInternalDocsTool(BaseTool):
                     full_context += prev_chunk_data['documents'][0]
                     full_context += "\n\n--- [ (이전 문맥) ] ---\n\n"
 
-                # --- 메인 청크 (정답) ---
                 full_context += best_doc.page_content
                 
-                # --- 뒤 청크 조회 ---
                 next_chunk_data = self._vectorstore.get(
                     where={"$and": [
                         {"source": source_file},
