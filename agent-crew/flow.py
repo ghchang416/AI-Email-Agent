@@ -1,7 +1,8 @@
 import requests
 import logging
 import os
-from typing import Tuple, Optional
+import json
+from typing import Tuple, Optional, Any
 from crewai.flow.flow import Flow, start, listen, router
 from crews.filtering.crew import FilteringCrew
 from crews.drafting.crew import DraftingCrew
@@ -12,61 +13,133 @@ from tools import send_task_to_kanban_tool
 
 logger = logging.getLogger(__name__)
 
+# 노이즈 필터링
+class SpecificLogFilter(logging.Filter):
+    def filter(self, record):
+        ignore_prefixes = ["http", "openai", "urllib3", "connection pool"]
+        msg = record.getMessage().lower()
+        return not any(msg.startswith(prefix) for prefix in ignore_prefixes)
+
+# 메모리 로그 핸들러
+class MemoryLogHandler(logging.Handler):
+    def __init__(self, log_list):
+        super().__init__()
+        self.log_list = log_list
+        self.formatter = logging.Formatter('%(message)s')
+
+    def emit(self, record):
+        msg = self.format(record)
+        self.log_list.append(msg)
+
 class EmailProcessingFlow(Flow[EmailFlowState]):
-    """ @router를 사용하여 카테고리별 로직을 명확히 분리한 이메일 플로우 """
     MAX_RETRIES = 1
     MAX_ROUTING_ATTEMPTS = 3
     spam_webhook_url = os.getenv("N8N_SPAM_PROCESS_WEBHOOK_URL", "http://n8n:5678/webhook/3228da63-16c5-44d8-9852-dab75bdb24c0")
-    reply_webhook_url = os.getenv("N8N_SEND_REPLY_WEBHOOK_URL", "http://n8n:5678/webhook/fe6bff88-b878-4abf-aa5e-3cae3a117f8d")
     default_name = os.getenv("DEFAULT_MANAGER_NAME", "총괄 담당자")
-    default_email = os.getenv("DEFAULT_MANAGER_EMAIL", "mamager@ajou.ac.kr")
-    
+    default_email = os.getenv("DEFAULT_MANAGER_EMAIL", "manager@ajou.ac.kr")
+
+    def _log_crew_step(self, step: Any):
+        """[Step Callback] 에이전트의 생각(Thought)과 도구 호출(Tool Call)만 기록"""
+        # Thought
+        if hasattr(step, 'thought') and step.thought:
+            clean_thought = step.thought.replace("Thought:", "").strip()
+            logger.info(f"[THOUGHT] {clean_thought}")
+        
+        # Tool Call (입력값은 생략하고 도구 이름만)
+        if hasattr(step, 'tool') and step.tool:
+            logger.info(f"[TOOL] Using tool: {step.tool}")
+
+    def _log_task_finish(self, output: Any):
+        """[Task Callback] 태스크 완료 시 에이전트 이름과 최종 결과(Pydantic) 기록"""
+        agent_name = getattr(output, 'agent', 'Unknown Agent')
+        
+        logger.info(f"\n[OUTPUT] ✅ Task Completed by: {agent_name}")
+        
+        # Pydantic 출력 확인 (구조화된 데이터)
+        if hasattr(output, 'pydantic') and output.pydantic:
+            try:
+                model_str = str(output.pydantic)
+                logger.info(f"[DATA] Structured Result:\n{model_str}")
+            except:
+                logger.info(f"[DATA] Result: {output.pydantic}")
+        
+        # 일반 텍스트 결과 (너무 길면 요약)
+        elif hasattr(output, 'raw'):
+            clean_raw = output.raw.strip()
+            if len(clean_raw) > 200:
+                logger.info(f"[RESULT] {clean_raw[:200]}... (truncated)")
+            else:
+                logger.info(f"[RESULT] {clean_raw}")
+
     @start()
     def start_flow(self):
+        self.state.logs = []
+        self.log_handler = MemoryLogHandler(self.state.logs)
+        self.log_handler.addFilter(SpecificLogFilter())
+        
+        root_logger = logging.getLogger()
+        root_logger.setLevel(logging.INFO)
+        for h in root_logger.handlers[:]:
+             if isinstance(h, MemoryLogHandler):
+                 root_logger.removeHandler(h)
+        root_logger.addHandler(self.log_handler)
+        logging.getLogger("crewai").addHandler(self.log_handler)
+
+        logger.info("[SYSTEM] 🚀 Workflow Initialized")
+        logger.info(f"[INFO] Processing Email ID: {getattr(self, '_email_input', None).message_id}")
+        
         email = getattr(self, "_email_input", None)
         self.state.email_data = email
         return email
 
     @listen(start_flow)
     def run_filtering(self, email_data: EmailInput) -> EmailAnalysis:
-        logger.info("Running filtering crew...")
+        logger.info("\n>> STEP 1: Filtering & Analysis")
+        
         inputs = {
             "sender": email_data.sender,
             "subject": email_data.subject,
             "body": email_data.body
         }
-        result: EmailAnalysis = FilteringCrew().crew().kickoff(inputs=inputs).pydantic
+        
+        crew = FilteringCrew().crew()
+        crew.step_callback = self._log_crew_step
+        crew.task_callback = self._log_task_finish
+        
+        result = crew.kickoff(inputs=inputs).pydantic
+        
         self.state.analysis_result = result
-        logger.info(f"Filtering complete. Category: {result.category}")
+        logger.info(f"[SYSTEM] Flow Category: {result.category}")
         return result
     
     @router(run_filtering) 
     def route_email(self, analysis: EmailAnalysis) -> str:
-        logger.info(f"Routing based on category: {analysis.category}")
         return analysis.category
 
     @listen("OTHER")
     def handle_other(self):
+        logger.info("[ROUTE] Handling 'OTHER' (Spam/Irrelevant)")
         try:
             payload = {"message_id": self.state.email_data.message_id}
             requests.post(self.spam_webhook_url, json=payload)
+            logger.info("[SYSTEM] Webhook sent.")
         except Exception as e:
-            logger.error(f"Failed to call n8n send webhook: {e}")
+            logger.error(f"[ERROR] Webhook failed: {e}")
         return "Flow finished for OTHER."
 
     @listen("TASK")
     def handle_task(self) -> Tuple[str, Optional[str]]:
-        logger.info(f"Action: Running Routing and Scheduling...")
+        logger.info("\n>> STEP 2: Routing Agent (Task Assignment)")
+        
         email_summary = self.state.analysis_result.summary
         email_data = self.state.email_data
-
         excluded_assignees_list = [] 
-        self.state.final_assignee_result: FinalAssigneeResult = None # type: ignore
+        self.state.final_assignee_result = None
         
         routing_succeeded = False
 
         for attempt in range(self.MAX_ROUTING_ATTEMPTS):
-            logger.info(f"Routing attempt {attempt + 1}/{self.MAX_ROUTING_ATTEMPTS}...")
+            logger.info(f"\n[INFO] Routing Attempt {attempt + 1}/{self.MAX_ROUTING_ATTEMPTS}")
 
             routing_inputs = {
                 "sender": email_data.sender,
@@ -77,45 +150,43 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
             }
 
             try:
-                final_result: FinalAssigneeResult = RoutingCrew().crew().kickoff(inputs=routing_inputs).pydantic
+                crew = RoutingCrew().crew()
+                crew.step_callback = self._log_crew_step
+                crew.task_callback = self._log_task_finish
+                
+                final_result = crew.kickoff(inputs=routing_inputs).pydantic
 
-                if not final_result:
-                     logger.warning("Routing crew returned an empty result. Retrying...")
-                     continue 
+                if not final_result: 
+                    logger.warning("[WARNING] Empty result from RoutingCrew.")
+                    continue 
                 
                 if final_result.status == 'Success':
-                    logger.info(f"Routing complete. Final Assignee: {final_result.final_assignee_name} ({final_result.final_assignee_email})")
+                    logger.info(f"[SYSTEM] Routing Success: {final_result.final_assignee_name}")
                     self.state.final_assignee_result = final_result
                     routing_succeeded = True
                     break
-                
                 else:
-                    logger.warning(f"Routing attempt failed. Reason: {final_result.reasoning}")
+                    logger.warning(f"[WARNING] Routing Failed: {final_result.reasoning}")
                     excluded_assignees_list.append(final_result.final_assignee_email)
-                    logger.info(f"Adding to exclusion list: {final_result.final_assignee_email}")
             
             except Exception as e:
-                logger.error(f"[ERROR] RoutingCrew kickoff failed (Attempt {attempt + 1}): {e}", exc_info=True)
+                logger.error(f"[ERROR] Routing Exception: {e}")
         
         if not routing_succeeded:
-            logger.error(f"All {self.MAX_ROUTING_ATTEMPTS} routing attempts failed. Assigning to default manager.")
+            logger.warning("[INFO] Fallback to Default Manager")
             self.state.final_assignee_result = FinalAssigneeResult(
                 final_assignee_name=self.default_name,
                 final_assignee_email=self.default_email,
                 status="Success",
-                reasoning="All routing attempts failed. Default assignment."
+                reasoning="Fallback"
             )
 
-        assigned_to_email = self.state.final_assignee_result.final_assignee_email
-        logger.info(f"Final assigned email for drafting: {assigned_to_email}")
-               
-        final_draft = self._run_drafting_crew()
-        return final_draft
+        return self._run_drafting_crew()
     
     @listen("Simple_Inquiry")
     def handle_inquiry(self) -> Optional[str]:
-        final_draft = self._run_drafting_crew()
-        return final_draft
+        logger.info("\n>> STEP 2: Drafting Agent (Simple Inquiry)")
+        return self._run_drafting_crew()
 
     def _run_drafting_crew(self) -> Optional[str]:
         final_draft = None
@@ -130,27 +201,43 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
         
         while not validation_passed and attempts < self.MAX_RETRIES:
             attempts += 1
-            logger.info(f"Drafting attempt {attempts}...")
+            logger.info(f"\n[INFO] Drafting Iteration {attempts}")
             
-            crew_result = DraftingCrew().crew().kickoff(inputs=inputs_for_crew)
-            validation: DraftValidation = crew_result.pydantic
+            crew = DraftingCrew().crew()
+            crew.step_callback = self._log_crew_step
+            crew.task_callback = self._log_task_finish
             
-            if validation and validation.passed:
-                validation_passed = True
-                final_draft = crew_result.tasks_output[0].raw
-                logger.info("Validation PASSED.")
-            else:
-                critique = validation.critique if validation else "Pydantic parsing failed."
-                logger.info(f"Validation FAILED. Critique: {critique}")
-                inputs_for_crew['last_critique'] = critique
+            crew_result = crew.kickoff(inputs=inputs_for_crew)
+            
+            try:
+                if crew_result.tasks_output and len(crew_result.tasks_output) > 0:
+                    draft_candidate = str(crew_result.tasks_output[0].raw)
+                else:
+                    draft_candidate = str(crew_result.raw)
+                
+                validation = crew_result.pydantic
+                
+                if validation and validation.passed:
+                    validation_passed = True
+                    final_draft = draft_candidate
+                    logger.info("[SYSTEM] Draft Approved.")
+                else:
+                    critique = validation.critique if validation else "Parsing Failed"
+                    logger.warning(f"[SYSTEM] Draft Rejected: {critique}")
+                    inputs_for_crew['last_critique'] = critique
+                    
+            except Exception as e:
+                logger.error(f"[ERROR] Output parsing error: {e}")
+                final_draft = str(crew_result.raw)
         
         return final_draft
 
     @listen(handle_task)
     def handle_task_post_action(self, final_draft: Optional[str]):
+        self._cleanup_logger()
+        full_log_text = "\n".join(self.state.logs)
         
-        if not final_draft:
-            logger.warning("handle_task_post_action: Draft is None, running failure handler.")
+        logger.info("\n>> STEP 3: Finalizing Task")
         
         try:
             email_data = self.state.email_data
@@ -163,56 +250,58 @@ class EmailProcessingFlow(Flow[EmailFlowState]):
                 body=email_data.body,
                 final_draft=final_draft,
                 assignee_name=assignee_data.final_assignee_name,
-                assignee_email=assignee_data.final_assignee_email
+                assignee_email=assignee_data.final_assignee_email,
+                execution_logs=full_log_text
             )
-            
-            if success:
-                return "Task_Created_In_Kanban"
-            else:
-                return "Task_Webhook_Failed"
-                
+            logger.info(f"[SYSTEM] Upload to Kanban: {'Success' if success else 'Failed'}")
+            return "Success" if success else "Failed"
         except Exception as e:
-            return logger.error(f"Failed to process handle_task_post_action: {e}", exc_info=True)
+            logger.error(f"[ERROR] {e}")
+            return "Error"
         
     @listen(handle_inquiry)
     def handle_inquiry_post_action(self, final_draft: Optional[str]):
-        """Simple_Inquiry 후속 조치: 성공 시 답장, 실패 시 칸반보드 전송"""
+        self._cleanup_logger()
+        full_log_text = "\n".join(self.state.logs)
+
+        logger.info("\n>> STEP 3: Auto-Reply Execution")
 
         if final_draft:
-            email_data = self.state.email_data
-            logger.info("Action: Calling n8n webhook to send reply...")
-            try:
-                payload = {
-                    "message_id": email_data.message_id,
-                    "content": final_draft
-                }
-                requests.post(self.reply_webhook_url, json=payload)
-                return "Inquiry_Answered"
-            except Exception as e:
-                logger.error(f"Failed to call n8n send webhook: {e}")
-                return "Inquiry_Webhook_Failed"
-        
-        else:
-            # --- 실패 경로 ---
-            logger.warning(f"Failed to generate draft for Simple_Inquiry. Assigning to default manager for manual handling.")
-            
             try:
                 email_data = self.state.email_data
-
                 success = send_task_to_kanban_tool._run(
                     message_id=email_data.message_id,
                     sender=email_data.sender,
                     subject=email_data.subject,
                     body=email_data.body,
-                    final_draft=None, # 초안 없음
-                    assignee_name=self.default_name,
-                    assignee_email=self.default_email
+                    final_draft=final_draft,
+                    assignee_name=self.default_name, 
+                    assignee_email=self.default_email,
+                    execution_logs=full_log_text,
+                    auto_reply=True
                 )
-                
-                if success:
-                    return "Task_Created_In_Kanban_As_Fallback"
-                else:
-                    return "Task_Webhook_Failed"
-                    
-            except Exception as e:
-                return logger.error(f"Failed to process handle_inquiry_post_action (failure path): {e}", exc_info=True)
+                logger.info(f"[SYSTEM] Auto-Reply Result: {'Success' if success else 'Failed'}")
+                return "Auto_Handled" if success else "Failed"
+            except Exception:
+                return "Error"
+        else:
+            logger.warning("[SYSTEM] Draft failed. Creating fallback task.")
+            try:
+                email_data = self.state.email_data
+                send_task_to_kanban_tool._run(
+                    message_id=email_data.message_id,
+                    sender=email_data.sender,
+                    subject=email_data.subject,
+                    body=email_data.body,
+                    final_draft=None,
+                    assignee_name=self.default_name,
+                    assignee_email=self.default_email,
+                    execution_logs=full_log_text
+                )
+                return "Fallback"
+            except:
+                return "Error"
+
+    def _cleanup_logger(self):
+        logging.getLogger().removeHandler(self.log_handler)
+        logging.getLogger("crewai").removeHandler(self.log_handler)

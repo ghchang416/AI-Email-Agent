@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime
+from datetime import datetime
 from sqlalchemy.orm import relationship
 from db.session import Base
 
@@ -25,8 +26,11 @@ class Task(Base):
     
     draft_content = Column(Text)
     
+    execution_logs = Column(Text, nullable=True)
     status = Column(String, default="시작 전")
-    
     assignee_id = Column(Integer, ForeignKey("users.id"))
+    
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
     assignee = relationship("User", back_populates="tasks")

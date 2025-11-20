@@ -21,14 +21,27 @@ async def get_all_tasks(
 @router.post("", response_model=TaskSchema, status_code=201, summary="[For CrewAI] 새 Task 생성 (Webhook)")
 async def create_new_task(
     task_data: KanbanTaskCreateSchema,
-    service: TaskService = Depends()
+    background_tasks: BackgroundTasks,
+    task_service: TaskService = Depends(),
+    user_service: UserService = Depends(),
 ):
     """
     CrewAI의 SendTaskToKanbanTool이 호출하는 엔드포인트입니다.
     Webhook 페이로드(이메일 원본, 초안, 담당자 이메일)를 받아
     새로운 Task를 생성하고 DB에 저장합니다.
     """
-    return service.create_task_from_webhook_payload(task_data)
+    task = task_service.create_task_from_webhook_payload(task_data)
+    if task_data.auto_reply:
+        user: UserSchema = user_service.get_user_by_id(task.assignee_id)
+        
+        background_tasks.add_task(
+            task_service.send_n8n_webhook_sync,
+            task.message_id, 
+            task.draft_content,
+            user.name,
+            user.email
+        )
+    return task
 
 @router.put("/{task_id}", response_model=TaskSchema, summary="Task 정보 수정")
 async def update_existing_task(

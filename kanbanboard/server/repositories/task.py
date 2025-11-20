@@ -27,7 +27,7 @@ class TaskRepository:
         assignee_id: int
     ) -> Task:
         """
-        [핵심] Webhook 페이로드(task_data)와 확정된 assignee_id를 받아
+        Webhook 페이로드(task_data)와 확정된 assignee_id를 받아
         새로운 Task 레코드를 생성합니다.
         """
         db_task = Task(
@@ -40,7 +40,9 @@ class TaskRepository:
             
             received_mail_content=task_data.original_body,
             message_id=task_data.message_id,
-            draft_content=task_data.ai_drafted_reply
+            draft_content=task_data.ai_drafted_reply,
+            
+            execution_logs=task_data.logs
         )
         self.db.add(db_task)
         self.db.commit()

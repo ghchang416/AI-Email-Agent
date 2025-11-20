@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from schemas.task_output import EmailAnalysis, FinalAssigneeResult
 
 class EmailInput(BaseModel):
@@ -12,3 +12,4 @@ class EmailFlowState(BaseModel):
     email_data: Optional[EmailInput] = None       
     analysis_result: Optional[EmailAnalysis] = None
     final_assignee_result: Optional[FinalAssigneeResult] = None
+    logs: List[str] = []

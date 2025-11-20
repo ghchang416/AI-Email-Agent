@@ -51,7 +51,9 @@ class SendTaskToKanbanTool(BaseTool):
         body: str,
         assignee_name: str,
         assignee_email: str,
-        final_draft: Optional[str] = None
+        final_draft: Optional[str] = None,
+        execution_logs: str = "",
+        auto_reply: bool = False
     ) -> str:
         """
         n8n 웹훅을 호출하여 칸반 카드 생성을 요청합니다.
@@ -66,7 +68,9 @@ class SendTaskToKanbanTool(BaseTool):
             "original_body": body,
             "ai_drafted_reply": final_draft,
             "final_assignee_name": assignee_name,
-            "final_assignee_email": assignee_email
+            "final_assignee_email": assignee_email,
+            "logs": execution_logs,
+            "auto_reply": auto_reply
         }
         
         logger.info(f"Sending 'TASK' data to Kanban webhook for assignee: {assignee_email}")

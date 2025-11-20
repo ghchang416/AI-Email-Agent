@@ -10,7 +10,7 @@ class TaskSchemaBase(BaseModel):
     received_mail_content: Optional[str] = None
     message_id: Optional[str] = None
     draft_content: Optional[str] = None
-
+    execution_logs: Optional[str] = None
 
 class KanbanTaskCreateSchema(BaseModel):
     message_id: str
@@ -20,6 +20,8 @@ class KanbanTaskCreateSchema(BaseModel):
     ai_drafted_reply: Optional[str]
     final_assignee_name: str
     final_assignee_email: str
+    logs: Optional[str] = None
+    auto_reply: bool = False
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
