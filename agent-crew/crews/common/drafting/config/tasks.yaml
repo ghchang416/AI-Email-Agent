@@ -1,0 +1,29 @@
+draft_response_task:
+  description: >
+    **[입력 데이터]**
+    - 학생 문의: {email_body}
+    - 확보된 증거 자료(Context): {retrieved_context}
+    
+    **[판단 및 실행]**
+    1. **적극적 추론**: 확보된 증거 자료(Context)를 바탕으로 학생의 질문에 대한 답을 논리적으로 도출하세요. 
+       (예: 규정에 'A 또는 B 필요'라고 적혀있고 학생이 'A'를 했다면, '충족된다'고 판단)
+    2. **NEEDS_INFO 사용 자제**: 정말로 답변이 불가능할 정도로 핵심 규정이 아예 없는 경우에만 `NEEDS_INFO`를 사용하세요. 약간의 불확실성은 "규정에 따르면 ~로 해석됩니다"라고 안내하면 됩니다.
+    3. **답변 작성**: 판단이 섰다면, 확보된 증거를 인용하여 신뢰감 있는 답변(`draft_content`)을 작성하세요.
+
+  expected_output: >
+    `DraftOutput` JSON 형식.
+  agent: response_generation_agent
+
+validate_draft_task:
+  description: >
+    **[입력 데이터]**
+    - 초안 (DraftOutput)
+    - 원본 컨텍스트 (Context)
+    
+    **[작업 지침]**
+    1. 초안이 `NEEDS_INFO` 상태라면, Context를 다시 확인해보세요. 만약 Context에 답변할 근거가 있는데도 포기했다면, 직접 답변을 작성하여 `COMPLETED`로 수정하세요.
+    2. 초안이 `COMPLETED`라면, 사실 관계(Factuality)와 어조(Tone)를 점검하세요.
+    3. 결과적으로 완벽한 답변이 되도록 수정하여 반환하세요.
+  expected_output: >
+    `DraftValidation` JSON 형식.
+  agent: draft_validation_agent

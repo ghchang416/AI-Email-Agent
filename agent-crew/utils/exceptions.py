@@ -1,2 +1,0 @@
-class OrgChartToolError(Exception):
-    pass
